@@ -1,121 +1,108 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useMemo, useState } from 'react'
+import vaultData from './data.json'
+import type { VaultNode } from './types'
+import Topbar from './components/Topbar'
+import Sidebar from './components/Sidebar'
+import SearchBar from './components/SearchBar'
+import FolderTree from './components/FolderTree'
+import PropertiesPanel from './components/PropertiesPanel'
+import RecentFiles from './components/RecentFiles'
+import { useRecentFiles } from './hooks/useRecentFiles'
+import { countFiles, countNodes, findPath } from './utils/file'
+import { collectMatchingFolderIds } from './utils/tree'
 import './App.css'
 
+const data = vaultData as VaultNode[]
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(['root_1', 'leg_1']))
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
+
+  const { recent, recordVisit } = useRecentFiles()
+
+  const totalItems = useMemo(() => countNodes(data), [])
+  const totalFiles = useMemo(() => countFiles(data), [])
+
+  const selectedPath = useMemo(
+    () => (selectedId ? findPath(data, selectedId) : null),
+    [selectedId],
+  )
+  const selectedNode = selectedPath ? selectedPath[selectedPath.length - 1] : null
+
+  function toggleFolder(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectNode(node: VaultNode) {
+    setSelectedId(node.id)
+    recordVisit(node)
+  }
+
+  function selectById(id: string) {
+    const path = findPath(data, id)
+    const node = path?.[path.length - 1]
+    if (node) selectNode(node)
+    // Make sure the file's ancestor folders are expanded so it's visible in the tree.
+    if (path) {
+      setExpanded((prev) => {
+        const next = new Set(prev)
+        path.slice(0, -1).forEach((ancestor) => next.add(ancestor.id))
+        return next
+      })
+    }
+  }
+
+  function handleSearchChange(next: string) {
+    setQuery(next)
+    if (next.trim()) {
+      const matchingFolders = collectMatchingFolderIds(data, next)
+      setExpanded((prev) => new Set([...prev, ...matchingFolders]))
+    }
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app">
+      <Topbar />
+      <div className="app__body">
+        <Sidebar totalItems={totalItems} totalFiles={totalFiles} />
 
-      <div className="ticks"></div>
+        <main className="explorer">
+          <div className="explorer__head">
+            <div>
+              <h1 className="explorer__title">File Explorer</h1>
+              <span className="explorer__badge">{totalItems} items</span>
+            </div>
+            <SearchBar value={query} onChange={handleSearchChange} />
+          </div>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+          <RecentFiles items={recent} activeId={selectedId} onSelect={selectById} />
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+          <div className="explorer__tree-card">
+            <div className="tree-header" role="presentation">
+              <span className="tree-header__name">Name</span>
+              <span className="tree-header__meta">Type</span>
+              <span className="tree-header__size">Size</span>
+            </div>
+            <FolderTree
+              data={data}
+              expanded={expanded}
+              onToggle={toggleFolder}
+              selectedId={selectedId}
+              onSelect={selectNode}
+              query={query}
+            />
+          </div>
+        </main>
+
+        <PropertiesPanel node={selectedNode} path={selectedPath} />
+      </div>
+    </div>
   )
 }
 
